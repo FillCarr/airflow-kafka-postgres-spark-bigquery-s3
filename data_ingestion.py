@@ -12,19 +12,19 @@ def main():
 def reduce_requests():
     print(f"start_time @ {dt.datetime.now().hour}:{dt.datetime.now().minute}")
     while True:
-        if (dt.datetime.now().second == 0):
-            flight_dict = raw_flight_data()
+        # if (dt.datetime.now().second == 0):
+            flight_json = raw_flight_data()
             print(f"flight_info_gathered @ {dt.datetime.now().hour}:{dt.datetime.now().minute}")
-            weather_dict = raw_weather_data(flight_dict)
+            weather_json = raw_weather_data(flight_json)
             print(f"weather_and_flight_data_sent @ {dt.datetime.now().hour}:{dt.datetime.now().minute}")
-            data_to_kafka(flight_dict, weather_dict)
+            data_to_kafka(flight_json, weather_json)
             
 
 def raw_flight_data():
     with OpenSkyApi(token_manager=TokenManager.from_json_file("credentials.json")) as api:
         states = api.get_states(bbox=(40.95, 42.05, -73.75, -71.78))
         for s in states.states:
-            flight_dict = {
+            flight_json = {
                 "icao24": s.icao24,
                 "velocity": s.velocity,
                 "vertical_rate": s.vertical_rate,
@@ -36,17 +36,17 @@ def raw_flight_data():
                 "latitude": s.latitude,
                 "longitude": s.longitude,
             }          
-    return flight_dict
+    return flight_json
 
 #https://open-meteo.com/en/docs/historical-forecast-api?hourly=
-def raw_weather_data(flight_dict):
+def raw_weather_data(flight_json):
     cache_session = requests_cache.CachedSession('.cache', expire_after = 3600)
     retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
     openmeteo = openmeteo_requests.Client(session = retry_session)
     url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
     params = {
-        "latitude": flight_dict["latitude"],
-        "longitude": flight_dict["longitude"],
+        "latitude": int(flight_json["latitude"]),
+        "longitude": int(flight_json["longitude"]),
         "current": ["temperature_2m", "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high", "pressure_msl", "surface_pressure", "precipitation", "wind_speed_10m", "wind_speed_80m", "wind_speed_120m", "wind_speed_180m", "wind_direction_10m", "wind_direction_80m", "wind_direction_120m", "wind_direction_180m", "wind_gusts_10m", "temperature_80m", "temperature_180m", "temperature_120m"],
     }
     responses = openmeteo.weather_api(url, params = params)
@@ -54,10 +54,10 @@ def raw_weather_data(flight_dict):
     #https://pypi.org/project/openmeteo-requests/
     current = response.Current()
 
-    print(f"plane: {flight_dict['icao24']}")
+    print(f"plane: {flight_json['icao24']}")
     print(f"coordinates: {response.Latitude()}°N {response.Longitude()}°E")
     print(f"land_elevation: {response.Elevation()} m asl")
-    weather_dict = {
+    weather_json = {
         "temperature_2m": current.Variables(0).Value(),
         "cloud_cover": current.Variables(1).Value(),
         "cloud_cover_low": current.Variables(2).Value(),
@@ -79,12 +79,12 @@ def raw_weather_data(flight_dict):
         "temperature_180m": current.Variables(18).Value(),
         "temperature_120m": current.Variables(19).Value(),
     }    
-    return weather_dict
+    return weather_json
 
-def data_to_kafka(flight_dict, weather_dict):
+def data_to_kafka(flight_json, weather_json):
     producer = KafkaProducer(value_serializer=lambda v: json.dumps(v).encode('utf-8'))
-    producer.send(f'flight_data', flight_dict)
-    producer.send(f'weather_data', weather_dict)
+    producer.send(f'flight_data', flight_json)
+    producer.send(f'weather_data', weather_json)
     producer.flush()
     print(f"kafka_send_time: {dt.datetime.now().hour}:{dt.datetime.now().minute}")
     return producer
