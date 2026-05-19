@@ -1,0 +1,185 @@
+from kafka import KafkaConsumer
+import json
+import psycopg
+import datetime as datetime
+from pyspark.sql import SparkSession
+import os
+from redshift_connect import UseRedshift
+
+db_name        = os.environ.get('DB_NAME')
+redshift_user  = os.environ.get('REDSHIFT_USER')
+redshift_pw    = os.environ.get('REDSHIFT_PW')
+redshift_endpt = os.environ.get('REDSHIFT_ENDPT')
+redshift_port  = os.environ.get('REDSHIFT_PORT')
+
+redshift_db_config = {'dbname': db_name,
+                    'host': redshift_endpt,
+                    'port': redshift_port,
+                    'user': redshift_user,
+                    'password': redshift_pw}
+def create_table():
+    try:
+        with UseRedshift(redshift_db_config) as cursor: 
+            discrepancy_table = rf"""create table if not exists public.flight_weather_anomalies (
+    icao24 text,
+    time_position timestamp,
+    latitude float,
+    longitude float,
+    velocity float,
+    heading_deviation float,
+    geo_altitude float,
+    vertical_rate float,
+    baro_altitude float,
+    temperature float,
+    humidity float,
+    temperature_2m float,
+    cloud_cover float,
+    cloud_cover_low float,
+    cloud_cover_mid float,
+    cloud_cover_high float,
+    pressure_msl float,
+    surface_pressure float,
+    precipitation float,
+    wind_speed_10m float,
+    wind_speed_80m float,
+    wind_speed_120m float,
+    wind_speed_180m float,
+    wind_direction_10m float,
+    wind_direction_80m float,
+    wind_direction_120m float,
+    wind_direction_180m float,
+    wind_gusts_10m float,
+    temperature_80m float,
+    temperature_120m float,
+    temperature_180m float,
+    heading_deviation_stddev float,
+    avg_velocity float,
+    variance_wind_speed_10m float,
+    variance_wind_speed_80m float,
+    variance_wind_speed_120m float,
+    variance_wind_speed_180m float,
+    anomaly_flag boolean,
+    processing_time timestamp
+                    )"""
+            cursor.execute(discrepancy_table)
+            copy_to_redshift()
+    except Exception as err:
+        print('Error: ', err)
+
+def copy_to_redshift():
+    try:
+        with UseRedshift(redshift_db_config) as cursor: 
+            SQL_COPY   = rf"""COPY public.flight_weather_anomalies FROM 's3://la-ticket-bucket-eu/spark-etl5'
+                    IAM_ROLE 'arn:aws:iam::900056063831:role/RedshiftCopyUnload'
+                    FORMAT AS PARQUET;
+                    """
+            cursor.execute(SQL_COPY)
+    except Exception as err:
+        print('Error: ', err)
+
+    pass
+def spark_anomaly_jobs():
+    spark = SparkSession.builder \
+    .appName("FlightWeatherProcessing") \
+    .getOrCreate() 
+    raw_df = spark.readStream.format("kafka") \
+    .option("kafka.bootstrap.servers", "localhost:9092")\
+    .option("subscribe", "flight_data").load()
+    df1.createTempView("flight_data")
+    df2.createTempView("weather_data")
+    spark.sql("" \
+    "select fd.icao24," \
+    "current_date, hour(current_date), minute(current_date) " \
+    "window(fd.time_position, '5 minutes') time_window," \
+    "stddev(heading_deviation) heading_deviation_stddev, " \
+    "avg(velocity) avg_velocity," \
+    "variance(wind_speed_10m) variance_wind_speed_10m," \
+    "variance(wind_speed_80m) variance_wind_speed_80m," \
+    "variance(wind_speed_120m) variance_wind_speed_120m," \
+    "variance(wind_speed_180m) variance_wind_speed_180m" \
+    "from flight_data fd," \
+    "join weather_data wd " \
+    "on fd.longitude = wd.longitude " \
+    "and fd.latitude = wd.latitude", \
+    "groupby fd.icao24" \
+    "window(fd.time_position, '5 minutes')"\
+    " having heading_deviation_stddev > avg_heading_deviation + 2 * sqrt(variance_heading_deviation" \
+    "or heading_deviation_stddev < avg_heading_deviation - 2 * sqrt(variance_heading_deviation)" \
+    "or velocity > avg_velocity + 2 * sqrt(variance_velocity"\
+    "or variance_wind_speed_10m > avg_wind_speed_10m + 2 * sqrt(variance_wind_speed_10m)" \
+    "or variance_wind_speed_80m > avg_wind_speed_80m + 2 * sqrt(variance_wind_speed_80m)" \
+    "or variance_wind_speed_120m > avg_wind_speed_120m + 2 * sqrt(variance_wind_speed_120m)" \
+    "or variance_wind_speed_180m > avg_wind_speed_180m + 2 * sqrt(variance_wind_speed_180m)" \
+        ).show()
+    
+    return (
+        raw_df.writeStream
+        .outputMode("update")
+        .foreachBatch(create_table())
+        .start()
+    )
+
+def write_to_pgsql_sink():
+    buffer_fw = []
+    buffer_size = 50
+    spark_anomaly_jobs(buffer_fw)
+    flight_data = KafkaConsumer('flight_data')
+    weather_data = KafkaConsumer('weather_data')
+    for flight, weather in zip(flight_data, weather_data):
+                flight_json = json.loads(flight.value)
+                weather_json = json.loads(weather.value)
+                merged_json = {**flight_json, **weather_json}
+                buffer_fw.append(merged_json)
+                print(f"{len(buffer_fw)}/100" )
+                if (len(buffer_fw) == buffer_size):
+                    connect_to_db(buffer_fw)
+                    buffer_fw.clear() 
+
+def connect_to_db(buffer_fw):
+    with psycopg.connect(dbname="geeks", user='postgres', password='root', host='localhost', port= '5432') as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    ceate table if not exists flight_weather 
+                    (
+                        icao24 TEXT,
+                        category INTEGER,
+                        true_track FLOAT,
+                        on_ground BOOLEAN,
+                        geo_altitude FLOAT,
+                        latitude FLOAT,
+                        longitude FLOAT,
+                        velocity FLOAT,
+                        vertical_rate FLOAT,
+                        baro_altitude FLOAT,
+                        time_position TIMESTAMP,
+                        location TEXT,
+                        temperature FLOAT,
+                        humidity FLOAT,
+                        temperature_2m FLOAT,
+                        cloud_cover FLOAT,
+                        cloud_cover_low FLOAT,
+                        cloud_cover_mid FLOAT,
+                        cloud_cover_high FLOAT,
+                        pressure_msl FLOAT,
+                        surface_pressure FLOAT,
+                        precipitation FLOAT,
+                        wind_speed_10m FLOAT,
+                        wind_speed_80m FLOAT,
+                        wind_speed_120m FLOAT,
+                        wind_speed_180m FLOAT,
+                        wind_direction_10m FLOAT,
+                        wind_direction_80m FLOAT,
+                        wind_direction_120m FLOAT,
+                        wind_direction_180m FLOAT,
+                        wind_gusts_10m FLOAT,
+                        temperature_80m FLOAT,
+                        temperature_180m FLOAT,
+                        temperature_120m FLOAT
+                    );
+                    """
+                )
+            cur.executemany("insert into flight_weather (icao24, on_ground, geo_altitude, latitude, longitude, velocity, vertical_rate, baro_altitude, last_contact, time_position, location, temperature, humidity, temperature_2m, cloud_cover, cloud_cover_low, cloud_cover_mid, cloud_cover_high, pressure_msl, surface_pressure, precipitation, wind_speed_10m, wind_speed_80m, wind_speed_120m, wind_speed_180m, wind_direction_10m, wind_direction_80m, wind_direction_120m, wind_direction_180m, wind_gusts_10m, temperature_80m, temperature_180m, temperature_120m) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", buffer_fw)
+
+if __name__ == "__main__":
+     write_to_pgsql_sink(spark_anomaly_jobs())

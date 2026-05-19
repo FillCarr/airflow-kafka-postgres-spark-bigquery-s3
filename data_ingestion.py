@@ -29,12 +29,13 @@ def raw_flight_data():
                 "velocity": s.velocity,
                 "vertical_rate": s.vertical_rate,
                 "baro_altitude": s.baro_altitude,
-                "last_contact": s.last_contact,
                 "time_position": s.time_position,
                 "on_ground": s.on_ground,
                 "geo_altitude": s.geo_altitude,
                 "latitude": s.latitude,
                 "longitude": s.longitude,
+                "category": s.category,
+                "true_track": s.true_track,
             }          
     return flight_json
 
@@ -47,7 +48,7 @@ def raw_weather_data(flight_json):
     params = {
         "latitude": int(flight_json["latitude"]),
         "longitude": int(flight_json["longitude"]),
-        "current": ["temperature_2m", "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high", "pressure_msl", "surface_pressure", "precipitation", "wind_speed_10m", "wind_speed_80m", "wind_speed_120m", "wind_speed_180m", "wind_direction_10m", "wind_direction_80m", "wind_direction_120m", "wind_direction_180m", "wind_gusts_10m", "temperature_80m", "temperature_180m", "temperature_120m"],
+        "current": ["latitude", "longitude", "temperature_2m", "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high", "pressure_msl", "surface_pressure", "precipitation", "wind_speed_10m", "wind_speed_80m", "wind_speed_120m", "wind_speed_180m", "wind_direction_10m", "wind_direction_80m", "wind_direction_120m", "wind_direction_180m", "wind_gusts_10m", "temperature_80m", "temperature_180m", "temperature_120m"],
     }
     responses = openmeteo.weather_api(url, params = params)
     response = responses[0]
@@ -58,26 +59,28 @@ def raw_weather_data(flight_json):
     print(f"coordinates: {response.Latitude()}°N {response.Longitude()}°E")
     print(f"land_elevation: {response.Elevation()} m asl")
     weather_json = {
-        "temperature_2m": current.Variables(0).Value(),
-        "cloud_cover": current.Variables(1).Value(),
-        "cloud_cover_low": current.Variables(2).Value(),
-        "cloud_cover_mid": current.Variables(3).Value(),
-        "cloud_cover_high": current.Variables(4).Value(),
-        "pressure_msl": current.Variables(5).Value(),
-        "surface_pressure": current.Variables(6).Value(),
-        "precipitation": current.Variables(7).Value(),
-        "wind_speed_10m": current.Variables(8).Value(),
-        "wind_speed_80m": current.Variables(9).Value(),
-        "wind_speed_120m": current.Variables(10).Value(),
-        "wind_speed_180m": current.Variables(11).Value(),
-        "wind_direction_10m": current.Variables(12).Value(),
-        "wind_direction_80m": current.Variables(13).Value(),
-        "wind_direction_120m": current.Variables(14).Value(),
-        "wind_direction_180m": current.Variables(15).Value(),
-        "wind_gusts_10m": current.Variables(16).Value(),
-        "temperature_80m": current.Variables(17).Value(),
-        "temperature_180m": current.Variables(18).Value(),
-        "temperature_120m": current.Variables(19).Value(),
+        "latitude": current.Variables(0).Value(),
+        "longitude": current.Variables(1).Value(),
+        "temperature_2m": current.Variables(2).Value(),
+        "cloud_cover": current.Variables(3).Value(),
+        "cloud_cover_low": current.Variables(4).Value(),
+        "cloud_cover_mid": current.Variables(5).Value(),
+        "cloud_cover_high": current.Variables(6).Value(),
+        "pressure_msl": current.Variables(7).Value(),
+        "surface_pressure": current.Variables(8).Value(),
+        "precipitation": current.Variables(9).Value(),
+        "wind_speed_10m": current.Variables(10).Value(),
+        "wind_speed_80m": current.Variables(11).Value(),
+        "wind_speed_120m": current.Variables(12).Value(),
+        "wind_speed_180m": current.Variables(13).Value(),
+        "wind_direction_10m": current.Variables(14).Value(),
+        "wind_direction_80m": current.Variables(15).Value(),
+        "wind_direction_120m": current.Variables(16).Value(),
+        "wind_direction_180m": current.Variables(17).Value(),
+        "wind_gusts_10m": current.Variables(18).Value(),
+        "temperature_80m": current.Variables(19).Value(),
+        "temperature_180m": current.Variables(20).Value(),
+        "temperature_120m": current.Variables(21).Value(),
     }    
     return weather_json
 

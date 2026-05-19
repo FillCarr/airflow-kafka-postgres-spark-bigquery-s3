@@ -1,0 +1,27 @@
+name: 'flight_weather_analytics'
+
+version: '1.0.0'
+
+config-version: 2
+
+profile: 'flight_weather_profile'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+
+models:
+  flight_weather_analytics:
+    staging:
+      +materialized: view
+      +schema: stg
+    dimensions:
+      +materialized: table
+      +schema: dwh
+    facts:
+      +materialized: incremental
+      +schema: dwh
+    anomalies:
+      +materialized: incremental
+      +schema: analytics
